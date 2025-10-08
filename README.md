@@ -228,15 +228,15 @@ Perfect for reviewing after your study session!
 ## Project Structure
 
 ```
-For Appwrite/
+Study-Sync/
 ├── package.json
 |── .gitignore
 ├── vercel.json
 ├── README.md
-└── index.html # Main HTML file
-── css/
+├──index.html # Main HTML file
+├── css/
    └── style.css           # Styles
-── js/
+└── js/
   ├── config.js           # Appwrite configuration
   └── app.js              # Main application logic
 ```
