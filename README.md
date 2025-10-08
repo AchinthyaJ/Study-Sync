@@ -230,14 +230,15 @@ Perfect for reviewing after your study session!
 ```
 For Appwrite/
 ├── package.json
+|── .gitignore
+├── vercel.json
 ├── README.md
-└── public/
-    ├── index.html              # Main HTML file
-    ├── css/
-    │   └── style.css           # Styles
-    └── js/
-        ├── config.js           # Appwrite configuration
-        └── app.js              # Main application logic
+└── index.html # Main HTML file
+── css/
+   └── style.css           # Styles
+── js/
+  ├── config.js           # Appwrite configuration
+  └── app.js              # Main application logic
 ```
 
 ## Features in Detail
