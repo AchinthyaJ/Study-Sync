@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudySync - Collaborative Canvas</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Appwrite SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/appwrite@16.0.2"></script>
+
+    <!-- jsPDF for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            overflow: hidden;
+            background: white;
+        }
+
+        /* Infinite Craft-style dotted background */
+        .canvas-area {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background-color: #ffffff;
+            background-image:
+                radial-gradient(circle, #e5e7eb 1px, transparent 1px);
+            background-size: 30px 30px;
+            cursor: grab;
+            overflow: hidden;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .canvas-area:active {
+            cursor: grabbing;
+        }
+
+        /* Canvas viewport */
+        .canvas-viewport {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            transform-origin: 0 0;
+            transition: transform 0.1s ease-out;
+        }
+
+        /* SVG for connection lines */
+        #connection-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* Nodes */
+        .node {
+            position: absolute;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 16px;
+            cursor: move;
+            z-index: 10;
+            min-width: 200px;
+            max-width: 300px;
+            transition: box-shadow 0.2s, transform 0.2s;
+            touch-action: none;
+        }
+
+        .node-header {
+            user-select: none;
+        }
+
+        .node:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transform: translateY(-2px);
+        }
+
+        .node.dragging {
+            opacity: 0.8;
+            z-index: 1000;
+        }
+
+        .node-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid;
+        }
+
+        .node-type-badge {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .node-content {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #374151;
+            word-wrap: break-word;
+        }
+
+        .node-content textarea,
+        .node-content input {
+            width: 100%;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            margin-bottom: 8px;
+            resize: vertical;
+            outline: none;
+            touch-action: auto;
+            -webkit-user-select: text;
+            user-select: text;
+        }
+
+        .node-content textarea:focus,
+        .node-content input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .node-content textarea {
+            min-height: 60px;
+        }
+
+        .node-content label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            margin-bottom: 4px;
+            margin-top: 8px;
+        }
+
+        .node-content label:first-child {
+            margin-top: 0;
+        }
+
+        .node.editing {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+            cursor: default;
+        }
+
+        .node-placeholder {
+            color: #9ca3af;
+            font-style: italic;
+        }
+
+        .quiz-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .quiz-option input[type="radio"] {
+            width: auto;
+            margin: 0;
+        }
+
+        .quiz-option label {
+            margin: 0;
+            flex: 1;
+        }
+
+        .node-save-hint {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 8px;
+            text-align: center;
+        }
+
+        /* Flashcard flip styles */
+        .flashcard-view {
+            cursor: pointer;
+            user-select: none;
+            touch-action: auto;
+        }
+
+        .flashcard-side {
+            padding: 16px;
+            border-radius: 8px;
+            background: #f9fafb;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .flashcard-side:hover {
+            background: #f3f4f6;
+        }
+
+        .flashcard-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #8b5cf6;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .flashcard-hint {
+            font-size: 11px;
+            color: #9ca3af;
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        /* Quiz styles */
+        .quiz-view {
+            user-select: none;
+        }
+
+        .quiz-question-text {
+            font-weight: 600;
+            margin-bottom: 12px;
+            font-size: 15px;
+        }
+
+        .quiz-option-btn {
+            display: block;
+            width: 100%;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            background: white;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+            touch-action: auto;
+        }
+
+        .quiz-option-btn:hover {
+            border-color: #10b981;
+            background: #f0fdf4;
+        }
+
+        .quiz-option-btn.correct {
+            border-color: #10b981;
+            background: #d1fae5;
+            color: #065f46;
+            font-weight: 600;
+        }
+
+        .quiz-option-btn.incorrect {
+            border-color: #ef4444;
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .quiz-option-btn.disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        /* Node action buttons */
+        .node-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .node-action-btn {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            touch-action: auto;
+        }
+
+        .node-action-btn:hover {
+            background: #f3f4f6;
+        }
+
+        .node-action-btn.primary {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .node-action-btn.primary:hover {
+            background: #2563eb;
+        }
+
+        /* Connection mode */
+        .connection-mode-active {
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5) !important;
+        }
+
+        .connection-btn {
+            background: #8b5cf6 !important;
+            color: white !important;
+        }
+
+        .connection-btn:hover {
+            background: #7c3aed !important;
+        }
+
+        /* StudySync branding */
+        .brand-logo {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 90;
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            pointer-events: none;
+            user-select: none;
+            text-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
+            letter-spacing: -0.5px;
+        }
+
+        /* Invite button */
+        .invite-btn {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            padding: 10px 20px;
+            background: white;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            color: #3b82f6;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .invite-btn:hover {
+            background: #3b82f6;
+            color: white;
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 6px 12px -1px rgba(59, 130, 246, 0.3);
+        }
+
+        .invite-btn.hidden {
+            display: none;
+        }
+
+        /* Invite modal */
+        .invite-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1001;
+        }
+
+        .invite-modal.hidden {
+            display: none;
+        }
+
+        .invite-modal-content {
+            background: white;
+            padding: 32px;
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .invite-modal-content h3 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #1f2937;
+        }
+
+        .invite-modal-content p {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 20px;
+        }
+
+        .invite-text-box {
+            background: #f3f4f6;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #374151;
+            margin-bottom: 16px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .invite-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .invite-copy-btn {
+            flex: 1;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .invite-copy-btn:hover {
+            background: #2563eb;
+        }
+
+        .invite-copy-btn.copied {
+            background: #10b981;
+        }
+
+        .invite-close-btn {
+            padding: 12px 24px;
+            background: #f3f4f6;
+            color: #374151;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .invite-close-btn:hover {
+            background: #e5e7eb;
+        }
+
+        /* Node type colors */
+        .node-note {
+            border-left: 4px solid #3b82f6;
+        }
+
+        .node-note .node-header {
+            border-color: #3b82f6;
+        }
+
+        .node-note .node-type-badge {
+            color: #3b82f6;
+        }
+
+        .node-flashcard {
+            border-left: 4px solid #8b5cf6;
+        }
+
+        .node-flashcard .node-header {
+            border-color: #8b5cf6;
+        }
+
+        .node-flashcard .node-type-badge {
+            color: #8b5cf6;
+        }
+
+        .node-quiz {
+            border-left: 4px solid #10b981;
+        }
+
+        .node-quiz .node-header {
+            border-color: #10b981;
+        }
+
+        .node-quiz .node-type-badge {
+            color: #10b981;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            display: flex;
+            gap: 10px;
+            background: white;
+            padding: 12px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .toolbar-btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toolbar-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .toolbar-btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-note {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-note:hover {
+            background: #2563eb;
+        }
+
+        .btn-flashcard {
+            background: #8b5cf6;
+            color: white;
+        }
+
+        .btn-flashcard:hover {
+            background: #7c3aed;
+        }
+
+        .btn-quiz {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-quiz:hover {
+            background: #059669;
+        }
+
+        .btn-export {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-export:hover {
+            background: #d97706;
+        }
+
+        /* Chatbox */
+        .chatbox {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            width: 350px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            max-height: 400px;
+        }
+
+        .chatbox-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .chatbox-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            max-height: 280px;
+        }
+
+        .chat-message {
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .chat-message .sender {
+            font-weight: 600;
+            color: #3b82f6;
+            margin-bottom: 4px;
+        }
+
+        .chat-message .text {
+            color: #374151;
+        }
+
+        .chat-message .timestamp {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 4px;
+        }
+
+        .chatbox-input {
+            padding: 12px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 8px;
+        }
+
+        .chatbox-input input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .chatbox-input input:focus {
+            border-color: #3b82f6;
+            ring: 2px;
+            ring-color: #3b82f6;
+        }
+
+        .chatbox-input button {
+            padding: 8px 16px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .chatbox-input button:hover {
+            background: #2563eb;
+        }
+
+        /* Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal.hidden {
+            display: none;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 32px;
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .modal-content h2 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #1f2937;
+        }
+
+        .modal-content p {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 24px;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .modal-content input:focus {
+            border-color: #3b82f6;
+            ring: 2px;
+            ring-color: #3b82f6;
+        }
+
+        .modal-content button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .modal-content button:hover {
+            background: #2563eb;
+        }
+
+        .error-message {
+            color: #ef4444;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+
+        /* Connection line */
+        .connection-line {
+            stroke: #9ca3af;
+            stroke-width: 2;
+            fill: none;
+            pointer-events: none;
+        }
+
+        /* Delete button on nodes */
+        .node-delete-btn {
+            color: #ef4444;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+            touch-action: auto;
+            padding: 4px;
+            display: inline-block;
+        }
+
+        .node-delete-btn:hover {
+            opacity: 1;
+        }
+
+        /* Zoom controls */
+        .zoom-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            display: flex;
+            gap: 8px;
+            background: white;
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .zoom-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: #f3f4f6;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 700;
+            color: #374151;
+            transition: all 0.2s;
+        }
+
+        .zoom-btn:hover {
+            background: #e5e7eb;
+        }
+
+        /* Scrollbar styling */
+        .chatbox-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chatbox-messages::-webkit-scrollbar-track {
+            background: #f3f4f6;
+            border-radius: 3px;
+        }
+
+        .chatbox-messages::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 3px;
+        }
+
+        .chatbox-messages::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+            /* Brand logo - smaller on mobile */
+            .brand-logo {
+                top: 10px;
+                left: 10px;
+                font-size: 20px;
+            }
+
+            /* Invite button - adjusted for mobile */
+            .invite-btn {
+                top: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                padding: 8px 16px;
+                font-size: 12px;
+            }
+
+            /* Toolbar - vertical stack on mobile */
+            .toolbar {
+                top: 50px;
+                right: 10px;
+                flex-direction: column;
+                gap: 8px;
+                padding: 10px;
+                max-width: calc(100vw - 20px);
+            }
+
+            .toolbar-btn {
+                padding: 8px 16px;
+                font-size: 12px;
+                width: 100%;
+                justify-content: center;
+            }
+
+            /* Chatbox - full width on mobile, positioned at bottom */
+            .chatbox {
+                bottom: 10px;
+                right: 10px;
+                left: 10px;
+                width: auto;
+                max-height: 300px;
+            }
+
+            .chatbox-messages {
+                max-height: 180px;
+            }
+
+            .chatbox-header {
+                padding: 12px;
+            }
+
+            .chatbox-input {
+                padding: 10px;
+            }
+
+            .chatbox-input input {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+
+            .chatbox-input button {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+
+            /* Zoom controls - adjusted position */
+            .zoom-controls {
+                bottom: 320px;
+                left: 10px;
+                gap: 6px;
+                padding: 6px;
+            }
+
+            .zoom-btn {
+                width: 32px;
+                height: 32px;
+                font-size: 16px;
+            }
+
+            /* Nodes - smaller on mobile */
+            .node {
+                min-width: 160px;
+                max-width: 250px;
+                padding: 12px;
+            }
+
+            .node-type-badge {
+                font-size: 10px;
+            }
+
+            .node-content {
+                font-size: 13px;
+            }
+
+            /* Make delete button easier to tap on mobile */
+            .node-delete-btn {
+                font-size: 22px;
+                padding: 6px;
+                min-width: 28px;
+                min-height: 28px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                opacity: 1;
+            }
+
+            .node-content textarea,
+            .node-content input {
+                font-size: 13px;
+                padding: 6px;
+            }
+
+            .node-action-btn {
+                padding: 6px;
+                font-size: 11px;
+            }
+
+            /* Modal adjustments */
+            .modal-content,
+            .invite-modal-content {
+                padding: 24px;
+                width: 95%;
+                max-width: 350px;
+            }
+
+            .modal-content h2 {
+                font-size: 20px;
+            }
+
+            .modal-content p,
+            .invite-modal-content p {
+                font-size: 13px;
+            }
+
+            .modal-content input {
+                padding: 10px;
+                font-size: 13px;
+            }
+
+            .invite-text-box {
+                font-size: 11px;
+                padding: 12px;
+            }
+
+            /* Quiz and flashcard adjustments */
+            .quiz-question-text {
+                font-size: 14px;
+            }
+
+            .quiz-option-btn {
+                padding: 8px 10px;
+                font-size: 13px;
+            }
+
+            .flashcard-side {
+                padding: 12px;
+                min-height: 60px;
+                font-size: 13px;
+            }
+
+            .flashcard-label {
+                font-size: 10px;
+            }
+
+            /* Canvas adjustments */
+            .canvas-area {
+                background-size: 20px 20px;
+            }
+        }
+
+        /* Extra small devices */
+        @media (max-width: 480px) {
+            .brand-logo {
+                font-size: 18px;
+                top: 8px;
+                left: 8px;
+            }
+
+            .invite-btn {
+                padding: 6px 12px;
+                font-size: 11px;
+            }
+
+            .toolbar {
+                top: 40px;
+                right: 8px;
+                left: 8px;
+                padding: 8px;
+            }
+
+            .toolbar-btn {
+                padding: 6px 12px;
+                font-size: 11px;
+            }
+
+            .chatbox {
+                bottom: 8px;
+                right: 8px;
+                left: 8px;
+                max-height: 250px;
+            }
+
+            .chatbox-messages {
+                max-height: 150px;
+            }
+
+            .zoom-controls {
+                bottom: 270px;
+                left: 8px;
+            }
+
+            .zoom-btn {
+                width: 28px;
+                height: 28px;
+                font-size: 14px;
+            }
+
+            .node {
+                min-width: 140px;
+                max-width: 200px;
+                padding: 10px;
+            }
+
+            /* Make delete button even larger on small phones */
+            .node-delete-btn {
+                font-size: 24px;
+                padding: 8px;
+                min-width: 32px;
+                min-height: 32px;
+            }
+
+            .modal-content,
+            .invite-modal-content {
+                padding: 20px;
+                width: 95%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- StudySync Branding -->
+    <div class="brand-logo">StudySync</div>
+
+    <!-- Invite Button -->
+    <button class="invite-btn hidden" id="invite-btn">📤 Invite People</button>
+
+    <!-- Invite Modal -->
+    <div id="invite-modal" class="invite-modal hidden">
+        <div class="invite-modal-content">
+            <h3>Invite People to Study Room</h3>
+            <p>Share this message with your study partners</p>
+            <div class="invite-text-box" id="invite-text"></div>
+            <div class="invite-actions">
+                <button class="invite-copy-btn" id="invite-copy-btn">Copy to Clipboard</button>
+                <button class="invite-close-btn" id="invite-close-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Room Modal -->
+    <div id="room-modal" class="modal">
+        <div class="modal-content">
+            <h2>Join StudySync</h2>
+            <p>Enter your name and room details to collaborate</p>
+            <input type="text" id="modal-username" placeholder="Your Name" />
+            <input type="text" id="modal-room-code" placeholder="Room Code" />
+            <input type="password" id="modal-room-password" placeholder="Room Password" />
+            <button id="modal-join-btn">Join Room</button>
+            <div id="modal-error" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- Canvas Area -->
+    <div class="canvas-area" id="canvas-area">
+        <div class="canvas-viewport" id="canvas-viewport">
+            <!-- SVG for connection lines -->
+            <svg id="connection-svg"></svg>
+            <!-- Nodes will be added here dynamically -->
+        </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+        <button class="toolbar-btn btn-note" id="add-note-btn">
+            <span>📝</span> Add Note
+        </button>
+        <button class="toolbar-btn btn-flashcard" id="add-flashcard-btn">
+            <span>🃏</span> Add Flashcard
+        </button>
+        <button class="toolbar-btn btn-quiz" id="add-quiz-btn">
+            <span>❓</span> Add Quiz
+        </button>
+        <button class="toolbar-btn btn-export" id="export-pdf-btn">
+            <span>📄</span> Export to PDF
+        </button>
+    </div>
+
+    <!-- Chatbox -->
+    <div class="chatbox">
+        <div class="chatbox-header">
+            <div style="font-size: 14px; font-weight: 600;">Room Chat</div>
+            <div id="user-info" style="font-size: 12px; color: #6b7280; margin-top: 4px;">Loading...</div>
+        </div>
+        <div class="chatbox-messages" id="chat-messages">
+            <!-- Messages will appear here -->
+        </div>
+        <div class="chatbox-input">
+            <input type="text" id="chat-input" placeholder="Type a message..." />
+            <button id="chat-send-btn">Send</button>
+        </div>
+    </div>
+
+    <!-- Zoom Controls -->
+    <div class="zoom-controls">
+        <button class="zoom-btn" id="zoom-in-btn">+</button>
+        <button class="zoom-btn" id="zoom-out-btn">−</button>
+        <button class="zoom-btn" id="zoom-reset-btn">⟲</button>
+    </div>
+
+
+    <script type="module" src="js/config.js"></script>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
